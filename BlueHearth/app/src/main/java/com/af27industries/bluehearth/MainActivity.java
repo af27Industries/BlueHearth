@@ -81,6 +81,7 @@ public class MainActivity extends AppCompatActivity {
     private final static int CONNECTING_STATUS = 3; // used in bluetooth handler to identify message status
 
     private LineChart chart;
+    private LineDataSet set1;
 
 
     @Override
@@ -193,6 +194,12 @@ public class MainActivity extends AppCompatActivity {
 
             // force pinch zoom along both axis
             chart.setPinchZoom(true);
+            chart.setAutoScaleMinMaxEnabled(true);
+
+            // Hide the legend
+            Legend legend = chart.getLegend();
+            legend.setEnabled(false);
+
         }
 
         XAxis xAxis;
@@ -200,7 +207,7 @@ public class MainActivity extends AppCompatActivity {
             xAxis = chart.getXAxis();
 
             // vertical grid lines
-            xAxis.enableGridDashedLine(10f, 10f, 0f);
+            xAxis.enableGridDashedLine(5f, 1f, 0f);
         }
 
         YAxis yAxis;
@@ -211,20 +218,20 @@ public class MainActivity extends AppCompatActivity {
             chart.getAxisRight().setEnabled(false);
 
             // horizontal grid lines
-            yAxis.enableGridDashedLine(10f, 10f, 0f);
+            yAxis.enableGridDashedLine(5f, 1f, 0f);
 
             // axis range
-            yAxis.setAxisMaximum(200f);
-            yAxis.setAxisMinimum(-200f);
+            yAxis.setAxisMaximum(300f);
+            yAxis.setAxisMinimum(-20f);
         }
 
 
         {   // // Create Limit Lines // //
             LimitLine llXAxis = new LimitLine(9f, "Index 10");
-            llXAxis.setLineWidth(4f);
-            llXAxis.enableDashedLine(10f, 10f, 0f);
+            llXAxis.setLineWidth(2f);
+            llXAxis.enableDashedLine(5f, 1f, 0f);
             llXAxis.setLabelPosition(LimitLine.LimitLabelPosition.RIGHT_BOTTOM);
-            llXAxis.setTextSize(10f);
+            llXAxis.setTextSize(7f);
 
             /*LimitLine ll1 = new LimitLine(150f, "Upper Limit");
             ll1.setLineWidth(2f);
@@ -248,13 +255,10 @@ public class MainActivity extends AppCompatActivity {
             //xAxis.addLimitLine(llXAxis);
         }
 
-        // add data
-        setData(0, 0);
-
 
         // draw points over time
-        chart.animateX(100);
-
+        chart.animateX(10);
+        chart.setVisibleXRangeMaximum(1000);
         // get the legend (only possible after setting data)
         //Legend l = chart.getLegend();
 
@@ -266,23 +270,25 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    private void setData(int x, float y) {
+    private void setData(ArrayList<Entry> values, boolean clear) {
 
-        ArrayList<Entry> values = new ArrayList<>();
 
-        values.add(new Entry(x, y));
+        if (chart.getData() != null && chart.getData().getDataSetCount() > 0) {
 
-        LineDataSet set1;
+            //Log.i(">>>>>>>>>>>>>>>>> DATA ", String.valueOf(values));
 
-        if (chart.getData() != null &&
-                chart.getData().getDataSetCount() > 0) {
             set1 = (LineDataSet) chart.getData().getDataSetByIndex(0);
             set1.setValues(values);
+            set1.setDrawValues(false);
             set1.notifyDataSetChanged();
             chart.getData().notifyDataChanged();
             chart.notifyDataSetChanged();
-            chart.invalidate();
 
+            // limit the number of visible entries
+            //chart.setVisibleXRangeMaximum(100);
+
+            // move to the latest entry
+            chart.moveViewToX(chart.getLineData().getEntryCount());
         } else {
             // create a dataset and give it a type
             set1 = new LineDataSet(values, "");
@@ -290,15 +296,15 @@ public class MainActivity extends AppCompatActivity {
             set1.setDrawIcons(false);
 
             // draw dashed line
-            set1.enableDashedLine(10f, 5f, 0f);
+            set1.enableDashedLine(5f, 1f, 0f);
 
             // black lines and points
-            set1.setColor(Color.BLACK);
-            set1.setCircleColor(Color.BLACK);
+            set1.setColor(Color.BLUE);
+            set1.setCircleColor(Color.BLUE);
 
             // line thickness and point size
-            set1.setLineWidth(1f);
-            set1.setCircleRadius(3f);
+            set1.setLineWidth(2f);
+            set1.setCircleRadius(2f);
 
             // draw points as solid circles
             set1.setDrawCircleHole(false);
@@ -312,10 +318,10 @@ public class MainActivity extends AppCompatActivity {
             set1.setValueTextSize(9f);
 
             // draw selection line as dashed
-            set1.enableDashedHighlightLine(10f, 5f, 0f);
+            set1.enableDashedHighlightLine(5f, 1f, 0f);
 
             // set the filled area
-            set1.setDrawFilled(true);
+            set1.setDrawFilled(false);
             set1.setFillFormatter(new IFillFormatter() {
                 @Override
                 public float getFillLinePosition(ILineDataSet dataSet, LineDataProvider dataProvider) {
@@ -331,11 +337,13 @@ public class MainActivity extends AppCompatActivity {
 
             // create a data object with the data sets
             LineData data = new LineData(dataSets);
-            chart.invalidate();
 
             // set data
             chart.setData(data);
+
         }
+        //chart.setVisibleXRangeMaximum(100);
+        //chart.moveViewTo(set1.getEntryCount() - 110, 50f, YAxis.AxisDependency.LEFT);
     }
 
 
@@ -510,11 +518,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         public void run() {
-            byte[] buffer = new byte[1024];  // buffer store for the stream
+            byte[] buffer;  // buffer store for the stream
             int bytes; // bytes returned from read()
+            ArrayList<Entry> values = new ArrayList<>();
+
             // Keep listening to the InputStream until an exception occurs
 
-            int i = 0;
+            int i = 1;
             while (true) {
 
                 try {
@@ -525,15 +535,24 @@ public class MainActivity extends AppCompatActivity {
                         SystemClock.sleep(100); //pause and wait for rest of data. Adjust this depending on your sending speed.
                         bytes = mmInStream.available(); // how many bytes are ready to be read?
                         bytes = mmInStream.read(buffer, 0, bytes); // record how many bytes we actually read
-                        setData(i,bytes);
-                        mHandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer)
-                                .sendToTarget(); // Send the obtained bytes to the UI activity
+                        values.add(new Entry(i,bytes));
+                        mHandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer).sendToTarget();
                     }
+
                 } catch (IOException e) {
                     e.printStackTrace();
 
                     break;
                 }
+
+
+                if ( ((float)i%1000) == 0){
+                    Log.i("debug", ">>>>>>>>>>>>>>>>>>>>>> i multiplo de 1000: " + i);
+                    setData(values, true);
+                }
+                setData(values, false);
+
+
 
                 i++;
             }
