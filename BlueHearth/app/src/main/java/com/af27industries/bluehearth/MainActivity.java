@@ -5,6 +5,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
@@ -41,6 +42,7 @@ import com.github.mikephil.charting.formatter.IFillFormatter;
 import com.github.mikephil.charting.interfaces.dataprovider.LineDataProvider;
 import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener;
+import com.github.mikephil.charting.utils.ColorTemplate;
 import com.github.mikephil.charting.utils.Utils;
 
 import java.io.IOException;
@@ -82,19 +84,21 @@ public class MainActivity extends AppCompatActivity {
 
     private LineChart chart;
     private LineDataSet set1;
+    Entry values = new Entry();
 
 
+    @SuppressLint("HandlerLeak")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        mBluetoothStatus = (TextView)findViewById(R.id.bluetoothStatus);
-        mReadBuffer = (TextView) findViewById(R.id.readBuffer);
-        mScanBtn = (Button)findViewById(R.id.scan);
-        mOffBtn = (Button)findViewById(R.id.off);
-        mDiscoverBtn = (Button)findViewById(R.id.discover);
-        mListPairedDevicesBtn = (Button)findViewById(R.id.PairedBtn);
+        mBluetoothStatus = findViewById(R.id.bluetoothStatus);
+        mReadBuffer =  findViewById(R.id.readBuffer);
+        mScanBtn = findViewById(R.id.scan);
+        mOffBtn = findViewById(R.id.off);
+        mDiscoverBtn = findViewById(R.id.discover);
+        mListPairedDevicesBtn = findViewById(R.id.PairedBtn);
 
         mBTArrayAdapter = new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1);
         mBTAdapter = BluetoothAdapter.getDefaultAdapter(); // get a handle on the bluetooth radio
@@ -109,6 +113,7 @@ public class MainActivity extends AppCompatActivity {
 
 
         mHandler = new Handler(){
+
             public void handleMessage(android.os.Message msg){
                 if(msg.what == MESSAGE_READ){
                     String readMessage = null;
@@ -118,6 +123,7 @@ public class MainActivity extends AppCompatActivity {
                         e.printStackTrace();
                     }
                     mReadBuffer.setText(readMessage);
+                    setData(new Entry(msg.arg1,msg.arg2));
                 }
 
                 if(msg.what == CONNECTING_STATUS){
@@ -183,7 +189,6 @@ public class MainActivity extends AppCompatActivity {
             chart.setTouchEnabled(true);
 
             // set listeners
-            //chart.setOnChartValueSelectedListener(this);
             chart.setDrawGridBackground(false);
 
             // enable scaling and dragging
@@ -195,6 +200,12 @@ public class MainActivity extends AppCompatActivity {
             // force pinch zoom along both axis
             chart.setPinchZoom(true);
             chart.setAutoScaleMinMaxEnabled(true);
+
+            LineData data = new LineData();
+            data.setValueTextColor(Color.WHITE);
+
+            // add empty data
+            chart.setData(data);
 
             // Hide the legend
             Legend legend = chart.getLegend();
@@ -221,8 +232,8 @@ public class MainActivity extends AppCompatActivity {
             yAxis.enableGridDashedLine(5f, 1f, 0f);
 
             // axis range
-            yAxis.setAxisMaximum(300f);
-            yAxis.setAxisMinimum(-20f);
+            yAxis.setAxisMaximum(250f);
+            yAxis.setAxisMinimum(-10f);
         }
 
 
@@ -258,92 +269,53 @@ public class MainActivity extends AppCompatActivity {
 
         // draw points over time
         chart.animateX(10);
-        chart.setVisibleXRangeMaximum(1000);
-        // get the legend (only possible after setting data)
-        //Legend l = chart.getLegend();
-
-        // draw legend entries as lines
-        //l.setForm(Legend.LegendForm.LINE);
-
-
 
     }
 
 
-    private void setData(ArrayList<Entry> values, boolean clear) {
+
+    private void setData(Entry values) {
+
+        LineData data = chart.getData();
+        int max = 100000;
+
+        if (data != null) {
+
+            ILineDataSet set = data.getDataSetByIndex(0);
+
+            if (set == null) {
+                set = createSet();
+                data.addDataSet(set);
+            }
+
+            data.addEntry(values, 0);
+            data.notifyDataChanged();
+            chart.notifyDataSetChanged();
+            chart.setVisibleXRangeMaximum(max);
+            chart.moveViewToX(values.getX() - (max-1));
 
 
-        if (chart.getData() != null && chart.getData().getDataSetCount() > 0) {
-
-            //Log.i(">>>>>>>>>>>>>>>>> DATA ", String.valueOf(values));
-
-            set1 = (LineDataSet) chart.getData().getDataSetByIndex(0);
+            /*set1 = (LineDataSet) chart.getData().getDataSetByIndex(0);
             set1.setValues(values);
             set1.setDrawValues(false);
             set1.notifyDataSetChanged();
             chart.getData().notifyDataChanged();
             chart.notifyDataSetChanged();
-
-            // limit the number of visible entries
-            //chart.setVisibleXRangeMaximum(100);
-
-            // move to the latest entry
-            chart.moveViewToX(chart.getLineData().getEntryCount());
-        } else {
-            // create a dataset and give it a type
-            set1 = new LineDataSet(values, "");
-
-            set1.setDrawIcons(false);
-
-            // draw dashed line
-            set1.enableDashedLine(5f, 1f, 0f);
-
-            // black lines and points
-            set1.setColor(Color.BLUE);
-            set1.setCircleColor(Color.BLUE);
-
-            // line thickness and point size
-            set1.setLineWidth(2f);
-            set1.setCircleRadius(2f);
-
-            // draw points as solid circles
-            set1.setDrawCircleHole(false);
-
-            // customize legend entry
-            set1.setFormLineWidth(1f);
-            set1.setFormLineDashEffect(new DashPathEffect(new float[]{10f, 5f}, 0f));
-            set1.setFormSize(15.f);
-
-            // text size of values
-            set1.setValueTextSize(9f);
-
-            // draw selection line as dashed
-            set1.enableDashedHighlightLine(5f, 1f, 0f);
-
-            // set the filled area
-            set1.setDrawFilled(false);
-            set1.setFillFormatter(new IFillFormatter() {
-                @Override
-                public float getFillLinePosition(ILineDataSet dataSet, LineDataProvider dataProvider) {
-                    return chart.getAxisLeft().getAxisMinimum();
-                }
-            });
-
-            // set color of filled area
-            set1.setFillColor(Color.BLACK);
-
-            ArrayList<ILineDataSet> dataSets = new ArrayList<>();
-            dataSets.add(set1); // add the data sets
-
-            // create a data object with the data sets
-            LineData data = new LineData(dataSets);
-
-            // set data
-            chart.setData(data);
+            chart.moveViewToX(chart.getLineData().getEntryCount());*/
 
         }
-        //chart.setVisibleXRangeMaximum(100);
-        //chart.moveViewTo(set1.getEntryCount() - 110, 50f, YAxis.AxisDependency.LEFT);
+    }
+
+    private LineDataSet createSet() {
+        LineDataSet set = new LineDataSet(null, "Dynamic Data");
+        set.setAxisDependency(YAxis.AxisDependency.LEFT);
+        set.setColor(Color.BLUE);
+        set.setCircleColor(Color.BLUE);
+        set.setLineWidth(1f);
+        set.setCircleRadius(1f);
+        set.setFillColor(Color.BLUE);
+        set.setDrawValues(false);
+        return set;
     }
 
 
@@ -535,8 +507,7 @@ public class MainActivity extends AppCompatActivity {
                         SystemClock.sleep(100); //pause and wait for rest of data. Adjust this depending on your sending speed.
                         bytes = mmInStream.available(); // how many bytes are ready to be read?
                         bytes = mmInStream.read(buffer, 0, bytes); // record how many bytes we actually read
-                        values.add(new Entry(i,bytes));
-                        mHandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer).sendToTarget();
+                        mHandler.obtainMessage(MESSAGE_READ, i, bytes, buffer).sendToTarget();
                     }
 
                 } catch (IOException e) {
@@ -546,13 +517,11 @@ public class MainActivity extends AppCompatActivity {
                 }
 
 
-                if ( ((float)i%1000) == 0){
+                /*if ( ((float)i%1000) == 0){
                     Log.i("debug", ">>>>>>>>>>>>>>>>>>>>>> i multiplo de 1000: " + i);
                     setData(values, true);
                 }
-                setData(values, false);
-
-
+                setData(values, false);*/
 
                 i++;
             }
