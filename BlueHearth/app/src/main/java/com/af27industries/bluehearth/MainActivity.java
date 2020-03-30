@@ -18,6 +18,7 @@ import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.util.Log;
@@ -45,9 +46,15 @@ import com.github.mikephil.charting.listener.OnChartValueSelectedListener;
 import com.github.mikephil.charting.utils.ColorTemplate;
 import com.github.mikephil.charting.utils.Utils;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -81,17 +88,19 @@ public class MainActivity extends AppCompatActivity {
     private final static int REQUEST_ENABLE_BT = 1; // used to identify adding bluetooth names
     private final static int MESSAGE_READ = 2; // used in bluetooth handler to identify message update
     private final static int CONNECTING_STATUS = 3; // used in bluetooth handler to identify message status
-
     private LineChart chart;
-    private LineDataSet set1;
-    Entry values = new Entry();
+    private float old = 0;
 
+    private static final String FILE_NAME = "data.txt";
 
     @SuppressLint("HandlerLeak")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        String br = "\n";
+
 
         mBluetoothStatus = findViewById(R.id.bluetoothStatus);
         mReadBuffer =  findViewById(R.id.readBuffer);
@@ -103,7 +112,7 @@ public class MainActivity extends AppCompatActivity {
         mBTArrayAdapter = new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1);
         mBTAdapter = BluetoothAdapter.getDefaultAdapter(); // get a handle on the bluetooth radio
 
-        mDevicesListView = (ListView)findViewById(R.id.devicesListView);
+        mDevicesListView = findViewById(R.id.devicesListView);
         mDevicesListView.setAdapter(mBTArrayAdapter); // assign model to view
         mDevicesListView.setOnItemClickListener(mDeviceClickListener);
 
@@ -117,13 +126,29 @@ public class MainActivity extends AppCompatActivity {
             public void handleMessage(android.os.Message msg){
                 if(msg.what == MESSAGE_READ){
                     String readMessage = null;
+                    int x = 0;
                     try {
                         readMessage = new String((byte[]) msg.obj, "UTF-8");
+                        x = msg.arg1;
                     } catch (UnsupportedEncodingException e) {
                         e.printStackTrace();
                     }
-                    mReadBuffer.setText(readMessage);
-                    setData(new Entry(msg.arg1,msg.arg2));
+
+                    String[] single = readMessage.split("\n");
+                    String temp = "0";
+                    if (single.length > 0){
+                        temp = single[0];
+                    }
+                    temp = temp.trim();
+                    if (!temp.isEmpty()) {
+                        setData(new Entry((float)x, Float.parseFloat(temp)));
+                        save(temp);
+                        //old = Float.parseFloat(temp);
+                    }else {
+                        setData(new Entry((float)x, old));
+                        //save(String.valueOf(old));
+                    }
+
                 }
 
                 if(msg.what == CONNECTING_STATUS){
@@ -232,8 +257,8 @@ public class MainActivity extends AppCompatActivity {
             yAxis.enableGridDashedLine(5f, 1f, 0f);
 
             // axis range
-            yAxis.setAxisMaximum(250f);
-            yAxis.setAxisMinimum(-10f);
+            yAxis.setAxisMaximum(1023f);
+            yAxis.setAxisMinimum(0f);
         }
 
 
@@ -244,32 +269,13 @@ public class MainActivity extends AppCompatActivity {
             llXAxis.setLabelPosition(LimitLine.LimitLabelPosition.RIGHT_BOTTOM);
             llXAxis.setTextSize(7f);
 
-            /*LimitLine ll1 = new LimitLine(150f, "Upper Limit");
-            ll1.setLineWidth(2f);
-            ll1.enableDashedLine(10f, 10f, 0f);
-            ll1.setLabelPosition(LimitLine.LimitLabelPosition.RIGHT_TOP);
-            ll1.setTextSize(10f);
-
-            LimitLine ll2 = new LimitLine(-30f, "Lower Limit");
-            ll2.setLineWidth(2f);
-            ll2.enableDashedLine(10f, 10f, 0f);
-            ll2.setLabelPosition(LimitLine.LimitLabelPosition.RIGHT_BOTTOM);
-            ll2.setTextSize(10f);*/
-
             // draw limit lines behind data instead of on top
             yAxis.setDrawLimitLinesBehindData(true);
             xAxis.setDrawLimitLinesBehindData(true);
-
-            // add limit lines
-            //yAxis.addLimitLine(ll1);
-            //yAxis.addLimitLine(ll2);
-            //xAxis.addLimitLine(llXAxis);
         }
 
-
         // draw points over time
-        chart.animateX(10);
-
+        chart.animateX(1);
     }
 
 
@@ -277,7 +283,7 @@ public class MainActivity extends AppCompatActivity {
     private void setData(Entry values) {
 
         LineData data = chart.getData();
-        int max = 100000;
+        int max = 800000;
 
         if (data != null) {
 
@@ -293,15 +299,6 @@ public class MainActivity extends AppCompatActivity {
             chart.notifyDataSetChanged();
             chart.setVisibleXRangeMaximum(max);
             chart.moveViewToX(values.getX() - (max-1));
-
-
-            /*set1 = (LineDataSet) chart.getData().getDataSetByIndex(0);
-            set1.setValues(values);
-            set1.setDrawValues(false);
-            set1.notifyDataSetChanged();
-            chart.getData().notifyDataChanged();
-            chart.notifyDataSetChanged();
-            chart.moveViewToX(chart.getLineData().getEntryCount());*/
 
         }
     }
@@ -492,9 +489,7 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             byte[] buffer;  // buffer store for the stream
             int bytes; // bytes returned from read()
-            ArrayList<Entry> values = new ArrayList<>();
 
-            // Keep listening to the InputStream until an exception occurs
 
             int i = 1;
             while (true) {
@@ -503,9 +498,9 @@ public class MainActivity extends AppCompatActivity {
                     // Read from the InputStream
                     bytes = mmInStream.available();
                     if(bytes != 0) {
-                        buffer = new byte[1024];
-                        SystemClock.sleep(100); //pause and wait for rest of data. Adjust this depending on your sending speed.
                         bytes = mmInStream.available(); // how many bytes are ready to be read?
+                        buffer = new byte[bytes];
+                        //SystemClock.sleep(1); //pause and wait for rest of data. Adjust this depending on your sending speed.
                         bytes = mmInStream.read(buffer, 0, bytes); // record how many bytes we actually read
                         mHandler.obtainMessage(MESSAGE_READ, i, bytes, buffer).sendToTarget();
                     }
@@ -515,13 +510,6 @@ public class MainActivity extends AppCompatActivity {
 
                     break;
                 }
-
-
-                /*if ( ((float)i%1000) == 0){
-                    Log.i("debug", ">>>>>>>>>>>>>>>>>>>>>> i multiplo de 1000: " + i);
-                    setData(values, true);
-                }
-                setData(values, false);*/
 
                 i++;
             }
@@ -542,5 +530,30 @@ public class MainActivity extends AppCompatActivity {
                 mmSocket.close();
             } catch (IOException e) { }
         }
+
+
     }
+
+    public void save(String text) {
+        File file = new File(Environment.getExternalStorageDirectory(), FILE_NAME);
+        try {
+
+            final FileWriter fos = new FileWriter(file,true);
+            BufferedWriter bw = new BufferedWriter(fos);
+            bw.write(text);
+            bw.newLine();
+            bw.close();
+
+            Toast.makeText(this, "Saved to " + Environment.getExternalStorageDirectory() + "/" + FILE_NAME,
+                    Toast.LENGTH_LONG).show();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+
+            Toast.makeText(this, e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+
 }
